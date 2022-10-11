@@ -1,19 +1,44 @@
-import pandas
+import warnings
+
+import numpy as np
 import pandas as pd
+from scipy import stats
+
 import seaborn as sns
 import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
 from sklearn.linear_model import SGDClassifier
 from sklearn.metrics import confusion_matrix, classification_report
-from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score
-from xgboost import XGBClassifier
-import plotly.graph_objects as go
-import warnings
-from scipy import stats
-import numpy as np
-from imblearn.over_sampling import SMOTE
+from sklearn.pipeline import Pipeline
+
+from imblearn.over_sampling import *
+from pyod.models.ecod import ECOD
+from pyod.models.iforest import IForest
+from feature_engine.selection.smart_correlation_selection import SmartCorrelatedSelection
+from feature_engine.selection.drop_psi_features import DropHighPSIFeatures
+from feature_engine.creation import MathematicalCombination, CombineWithReferenceFeature
+from feature_engine.transformation import *
+
+from xgboost import XGBClassifier,XGBRegressor
+from lightgbm import LGBMClassifier,LGBMRegressor
+from catboost import CatBoostClassifier,CatBoostRegressor
+
+EXPERIMENT_CONFIG = {
+    'dataset': 'white',  # ['red', 'white']
+    'task': 'classification',  # 必填 ['classification', 'regression', 'coarse_grain']
+    'outlier_detect': 'IForest',  # 选填 ['ECOD', 'IForest']
+    'outlier_process': 'drop_outliers',  # 必填 ['impute_outliers', 'drop_outliers']
+    'feature_creation': 'true',  # 选填 ['true']
+    'feature_selection': 'SmartCorrelatedSelection',  # 选填 ['SmartCorrelatedSelection', 'DropHighPSIFeatures']
+    'transformer': 'YeoJohnsonTransformer', # 选填 ['LogTransformer', 'LogCpTransformer', 'ArcsinTransformer', 'PowerTransformer', 'YeoJohnsonTransformer', 'BoxCoxTransformer']
+    'sampler': 'BorderlineSMOTE',  # 选填 ['ADASYN', 'RandomOverSampler', 'SMOTE', 'BorderlineSMOTE', 'SVMSMOTE', 'SMOTEN']
+    'model': 'CatBoostClassifier',
+}
 
 
 def init_config() -> None:
@@ -31,10 +56,8 @@ def init_config() -> None:
     sns.set()
 
 
-def import_data(dataset_path: str, task:str='classification') -> pd.DataFrame:
-    if task not in ['classification','regression','coarse_grain']:
-        print('Invalid task')
-        exit(-1)
+def import_data(dataset_path: str) -> pd.DataFrame:
+    task = EXPERIMENT_CONFIG['task']
 
     # 读csv
     wine = pd.read_csv(dataset_path, sep=';')
@@ -45,7 +68,7 @@ def import_data(dataset_path: str, task:str='classification') -> pd.DataFrame:
         if value <= 5 else 'good'
         if value <= 7 else 'outstanding')
         wine['quality'] = pd.Categorical(wine['quality'],
-                                                categories=['need_to_improve', 'good', 'outstanding'])
+                                         categories=['need_to_improve', 'good', 'outstanding'])
     elif task == 'regression':
         # 回归
         wine['quality'].astype('float64')
@@ -56,24 +79,24 @@ def import_data(dataset_path: str, task:str='classification') -> pd.DataFrame:
     return wine
 
 
-def EDA(wine:pd.DataFrame) -> None:
+def EDA(wine: pd.DataFrame) -> None:
     # 打印数据集基本信息
     print(wine.info())
     print(wine.describe().T)
 
-    X = wine.drop(['quality'],axis=1)
+    X = wine.drop(['quality'], axis=1)
     Y = wine[['quality']]
 
-    # pairplot
-    sns.pairplot(wine, height=5, kind='scatter', diag_kind='kde')
-    plt.show()
-
-    # quality分布圆形图
-    fig = go.Figure(
-        data=[go.Pie(labels=Y['quality'].value_counts().index, values=Y['quality'].value_counts(), hole=.3)])
-    fig.update_layout(legend_title_text='Quality')
-    fig.show()
-
+    # # pairplot
+    # sns.pairplot(wine, height=5, kind='scatter', diag_kind='kde')
+    # plt.show()
+    #
+    # # quality分布圆形图
+    # fig = go.Figure(
+    #     data=[go.Pie(labels=Y['quality'].value_counts().index, values=Y['quality'].value_counts(), hole=.3)])
+    # fig.update_layout(legend_title_text='Quality')
+    # fig.show()
+    #
     # feature分布图
     fig, ax = plt.subplots(X.shape[1], 3, figsize=(30, 90))
     for index, col_name in enumerate(X.columns):
@@ -86,52 +109,159 @@ def EDA(wine:pd.DataFrame) -> None:
     fig.show()
 
     # correlation
-    correlation = wine.corr()
-    cols = correlation.nlargest(10, 'quality')['quality'].index
-    cm = np.corrcoef(wine[cols].values.T)
-    _, _ = plt.subplots(figsize=(14, 12))
-    sns.heatmap(cm, vmax=.8, linewidths=0.01, square=True, annot=True, cmap='viridis',
-                linecolor="white", xticklabels=cols.values, annot_kws={'size': 12}, yticklabels=cols.values)
-    plt.show()
+    # correlation = wine.corr()
+    # cols = correlation.nlargest(X.shape[1], 'quality')['quality'].index
+    # cm = np.corrcoef(wine[cols].values.T)
+    # _, _ = plt.subplots(figsize=(14, 12))
+    # sns.heatmap(cm, vmax=.8, linewidths=0.01, square=True, annot=True, cmap='viridis',
+    #             linecolor="white", xticklabels=cols.values, annot_kws={'size': 12}, yticklabels=cols.values)
+    # plt.show()
 
-    # quality在feature中的分布
-    fig, ax = plt.subplots(3, 4, figsize=(24, 30))
-    k = 0
-    columns = list(X.columns)
-    while k < len(columns):
-        for i in range(3):
-            for j in range(4):
-                if k < len(columns):
-                    sns.boxplot(Y['quality'], X[columns[k]], ax=ax[i][j], palette='pastel')
-                    k += 1
-    plt.show()
+    # # quality在feature中的分布
+    # fig_col = int(X.shape[1] ** 0.5)
+    # fig_row = fig_col
+    # if X.shape[1] ** 0.5 != fig_row:
+    #     fig_row += 1
+    # fig, ax = plt.subplots(fig_row, fig_col, figsize=(fig_col * 8, fig_row * 8))
+    # k = 0
+    # columns = list(X.columns)
+    # for i in range(fig_row):
+    #     for j in range(fig_col):
+    #         if k >= len(columns):
+    #             break
+    #         sns.boxplot(Y['quality'], X[columns[k]], ax=ax[i][j], palette='pastel')
+    #         k += 1
+    # plt.show()
+
+
+def impute_outliers(df, outlier_index):
+    for col in df.columns:
+        if col == 'quality':
+            continue
+        med = np.median(df[col])
+        for i in outlier_index:
+            df.loc[i, col] = med
+    return df
+
+
+def drop_outliers(df, outlier_index):
+    return df.drop(outlier_index)
+
+
+def handle_outlier(wine):
+    X = wine.drop(['quality'], axis=1)
+    # outlier 识别
+    # clf = ECOD()
+    clf = eval(EXPERIMENT_CONFIG['outlier_detect'])()
+    outlier = clf.fit_predict(X)
+    outlier_index = np.where(outlier == 1)[0]
+
+    # outlier 处理
+    wine = eval(EXPERIMENT_CONFIG['outlier_process'])(wine, outlier_index)
+    return wine
+
+
+def feature_selection(wine):
+    X = wine.drop(['quality'], axis=1)
+    Y = wine[['quality']]
+
+    primed_wine = pd.concat([eval(EXPERIMENT_CONFIG['feature_selection'])().fit_transform(X), Y], axis=1)
+
+    return primed_wine
+
+
+def feature_creation(wine):
+    X = wine.drop(['quality'], axis=1)
+    Y = wine[['quality']]
+
+    feature_creation_pipeline = Pipeline([
+        ('acidity', MathematicalCombination(
+            variables_to_combine=['fixed acidity', 'volatile acidity'],
+            math_operations=['sum', 'mean'],
+            new_variables_names=['total_acidity', 'average_acidity']
+        )
+         ),
+
+        ('total_minerals', MathematicalCombination(
+            variables_to_combine=['chlorides', 'sulphates'],
+            math_operations=['sum', 'mean'],
+            new_variables_names=['total_minerals', 'average_minearals'],
+        )
+         ),
+
+        ('non_free_sulfur', CombineWithReferenceFeature(
+            variables_to_combine=['total sulfur dioxide'],
+            reference_variables=['free sulfur dioxide'],
+            operations=['sub'],
+            new_variables_names=['non_free_sulfur_dioxide'],
+        )
+         ),
+
+        ('perc_free_sulfur', CombineWithReferenceFeature(
+            variables_to_combine=['free sulfur dioxide'],
+            reference_variables=['total sulfur dioxide'],
+            operations=['div'],
+            new_variables_names=['percentage_free_sulfur'],
+        )
+         ),
+
+        ('perc_salt_sulfur', CombineWithReferenceFeature(
+            variables_to_combine=['sulphates'],
+            reference_variables=['free sulfur dioxide'],
+            operations=['div'],
+            new_variables_names=['percentage_salt_sulfur'],
+        )
+         ),
+    ])
+    X = feature_creation_pipeline.fit_transform(X)
+    augmented_wine = pd.concat([X, Y], axis=1)
+
+    return augmented_wine
 
 
 def preprocessing(wine):
-    # TODO outlier去除
+    # 处理outlier
+    if (EXPERIMENT_CONFIG.get('outlier_detect')):
+        wine = handle_outlier(wine)
+
+    # 特征创造
+    if (EXPERIMENT_CONFIG.get('feature_creation')):
+        wine = feature_creation(wine)
+
+    # 特征选择
+    if (EXPERIMENT_CONFIG.get('feature_selection')):
+        wine = feature_selection(wine)
 
     # 重采样
-    oversample = SMOTE()
-    resample_features, resample_labels = oversample.fit_resample(wine.drop(["quality"], axis=1), wine["quality"])
+    if (EXPERIMENT_CONFIG.get('sampler')):
+        sampler = eval(EXPERIMENT_CONFIG['sampler'])()
+        X, Y = wine.drop(['quality'], axis=1), wine[['quality']]
+        X, Y = sampler.fit_resample(X, Y)
+        wine = pd.concat([X,Y], axis=1)
 
-    # TODO 特征选取
-
-    # scaler
-    scaler = StandardScaler()
-    scaled_feature = pd.DataFrame(scaler.fit_transform(resample_features), columns=resample_features.columns)
-    processed_wine = pd.concat([scaled_feature,resample_labels],axis=1)
+    # scale
+    X = wine.drop(['quality'], axis=1)
+    Y = wine[['quality']]
+    scaler = MinMaxScaler(feature_range=(1e-6, 1 - 1e-6))
+    X = pd.DataFrame(scaler.fit_transform(X), columns=X.columns)
+    if (EXPERIMENT_CONFIG.get('transformer')):
+        scaler = eval(EXPERIMENT_CONFIG['transformer'])()
+        X = scaler.fit_transform(X)
+    wine = pd.concat([X, Y], axis=1)
 
     # 切分数据集
-    X_train, X_test, Y_train, Y_test = train_test_split(scaled_feature, resample_labels, test_size=0.1, random_state=42)
+    X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.1,
+                                                        random_state=66)
 
-    return processed_wine, X_train, X_test, Y_train, Y_test
+
+    return wine, X_train, X_test, Y_train, Y_test
 
 
 def training(X_train, Y_train):
-    xgb = XGBClassifier()
-    xgb.fit(X_train, Y_train)
+    model = eval(EXPERIMENT_CONFIG['model'])()
+    model.fit(X_train, Y_train)
 
-    return xgb
+    return model
 
 
 def evaluation(model, X_test, Y_test):
@@ -144,14 +274,14 @@ if __name__ == '__main__':
     init_config()
 
     # 导入数据集
-    wine = import_data('./dataset/winequality-red.csv','classification')
+    wine = import_data(f'./dataset/winequality-{EXPERIMENT_CONFIG["dataset"]}.csv')
 
     # 预处理
     processed_wine, X_train, X_test, Y_train, Y_test = preprocessing(wine)
 
     # # 可视化
-    EDA(wine)
-    EDA(processed_wine)
+    # EDA(wine)
+    # EDA(processed_wine)
 
     # 训练
     model = training(X_train, Y_train)
