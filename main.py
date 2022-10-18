@@ -11,7 +11,7 @@ import plotly.graph_objects as go
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
 from sklearn.linear_model import SGDClassifier
-from sklearn.metrics import confusion_matrix, classification_report
+from sklearn.metrics import confusion_matrix, classification_report,mean_squared_error
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score
 from sklearn.pipeline import Pipeline
@@ -24,22 +24,68 @@ from feature_engine.selection.drop_psi_features import DropHighPSIFeatures
 from feature_engine.creation import MathematicalCombination, CombineWithReferenceFeature
 from feature_engine.transformation import *
 
-from xgboost import XGBClassifier,XGBRegressor
-from lightgbm import LGBMClassifier,LGBMRegressor
-from catboost import CatBoostClassifier,CatBoostRegressor
+from xgboost import XGBClassifier, XGBRegressor
+from lightgbm import LGBMClassifier, LGBMRegressor
+from catboost import CatBoostClassifier, CatBoostRegressor
+
+from sklearn.neural_network import MLPClassifier,MLPRegressor
+from sklearn.neighbors import KNeighborsClassifier,KNeighborsRegressor
+from sklearn.svm import SVC,SVR
+from sklearn.gaussian_process import GaussianProcessClassifier,GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF
+from sklearn.tree import DecisionTreeClassifier,DecisionTreeRegressor
+from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier,RandomForestRegressor,AdaBoostRegressor
+from sklearn.naive_bayes import GaussianNB
+from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
+
+# from autokeras import StructuredDataClassifier,StructuredDataRegressor
+
 
 EXPERIMENT_CONFIG = {
     'dataset': 'white',  # ['red', 'white']
     'task': 'classification',  # 必填 ['classification', 'regression', 'coarse_grain']
-    'outlier_detect': 'IForest',  # 选填 ['ECOD', 'IForest']
-    'outlier_process': 'drop_outliers',  # 必填 ['impute_outliers', 'drop_outliers']
-    'feature_creation': 'true',  # 选填 ['true']
-    'feature_selection': 'SmartCorrelatedSelection',  # 选填 ['SmartCorrelatedSelection', 'DropHighPSIFeatures']
-    'transformer': 'YeoJohnsonTransformer', # 选填 ['LogTransformer', 'LogCpTransformer', 'ArcsinTransformer', 'PowerTransformer', 'YeoJohnsonTransformer', 'BoxCoxTransformer']
-    'sampler': 'BorderlineSMOTE',  # 选填 ['ADASYN', 'RandomOverSampler', 'SMOTE', 'BorderlineSMOTE', 'SVMSMOTE', 'SMOTEN']
-    'model': 'CatBoostClassifier',
+    # 'outlier_detect': 'IForest',  # 选填 ['ECOD', 'IForest']
+    # 'outlier_process': 'drop_outliers',  # 必填 ['impute_outliers', 'drop_outliers']
+    # 'feature_creation': 'true',  # 选填 ['true']
+    # 'feature_selection': 'SmartCorrelatedSelection',  # 选填 ['SmartCorrelatedSelection', 'DropHighPSIFeatures']
+    # 'transformer': 'YeoJohnsonTransformer',
+    # 选填 ['LogTransformer', 'LogCpTransformer', 'ArcsinTransformer', 'PowerTransformer', 'YeoJohnsonTransformer', 'BoxCoxTransformer']
+    'sampler': 'BorderlineSMOTE',
+    # 选填 ['ADASYN', 'RandomOverSampler', 'SMOTE', 'BorderlineSMOTE', 'SVMSMOTE', 'SMOTEN']
+}
+CLF_MODELS = {
+    # 'KNN': KNeighborsClassifier(3),
+    # 'SVC_linear': SVC(kernel="linear"),
+    # 'SVC_RBF': SVC(),
+    # "Gaussian_Process": GaussianProcessClassifier(1.0 * RBF(1.0)),
+    # "Decision_Tree": DecisionTreeClassifier(),
+    # "Random_Forest": RandomForestClassifier(),
+    # "MLP": MLPClassifier(),
+    # "AdaBoost": AdaBoostClassifier(),
+    # "Naive_Bayes": GaussianNB(),
+    # "QDA": QuadraticDiscriminantAnalysis(),
+    # "XGBoost": XGBClassifier(),
+    "LightGBM": LGBMClassifier(),
+    # "CatBoost": CatBoostClassifier(silent=True),
+    # "AutoML": StructuredDataClassifier(),
 }
 
+REG_MODELS = {
+    # 'KNN': KNeighborsRegressor(3),
+    # 'SVC_linear': SVR(kernel="linear", C=0.025),
+    # 'SVC_RBF': SVR(gamma=2, C=1),
+    # "Gaussian_Process": GaussianProcessRegressor(1.0 * RBF(1.0)),
+    "Decision_Tree": DecisionTreeRegressor(max_depth=5),
+    "Random_Forest": RandomForestRegressor(max_depth=5, n_estimators=10, max_features=1),
+    "MLP": MLPRegressor(alpha=1, max_iter=1000),
+    "AdaBoost": AdaBoostRegressor(),
+    # "Naive_Bayes": GaussianNB(),
+    # "QDA": QuadraticDiscriminantAnalysis(),
+    "XGBoost": XGBRegressor(),
+    "LightGBM": LGBMRegressor(),
+    "CatBoost": CatBoostRegressor(silent=True),
+    # "AutoML": StructuredDataRegressor(),
+}
 
 def init_config() -> None:
     # 显示所有列
@@ -237,7 +283,7 @@ def preprocessing(wine):
         sampler = eval(EXPERIMENT_CONFIG['sampler'])()
         X, Y = wine.drop(['quality'], axis=1), wine[['quality']]
         X, Y = sampler.fit_resample(X, Y)
-        wine = pd.concat([X,Y], axis=1)
+        wine = pd.concat([X, Y], axis=1)
 
     # scale
     X = wine.drop(['quality'], axis=1)
@@ -253,24 +299,20 @@ def preprocessing(wine):
     X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.1,
                                                         random_state=66)
 
-
     return wine, X_train, X_test, Y_train, Y_test
 
-
-def training(X_train, Y_train):
-    model = eval(EXPERIMENT_CONFIG['model'])()
-    model.fit(X_train, Y_train)
-
-    return model
 
 
 def evaluation(model, X_test, Y_test):
     predict = model.predict(X_test)
-    print(classification_report(Y_test, predict))
+    if EXPERIMENT_CONFIG['task'] == 'regression':
+        print(mean_squared_error(Y_test,predict))
+    else:
+        print(classification_report(Y_test, predict))
 
 
 if __name__ == '__main__':
-    # 初始化各种设计
+    # 初始化各种设置
     init_config()
 
     # 导入数据集
@@ -284,7 +326,12 @@ if __name__ == '__main__':
     # EDA(processed_wine)
 
     # 训练
-    model = training(X_train, Y_train)
+    models = CLF_MODELS
+    if EXPERIMENT_CONFIG['task'] == 'regression':
+        models = REG_MODELS
+    for name,model in models.items():
+        model.fit(X_train, Y_train)
 
-    # 评估
-    evaluation(model, X_test, Y_test)
+        print('-'*10 + name + '-'*10)
+        # 评估
+        evaluation(model, X_test, Y_test)
