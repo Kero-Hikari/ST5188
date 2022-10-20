@@ -21,7 +21,7 @@ from pyod.models.ecod import ECOD
 from pyod.models.iforest import IForest
 from feature_engine.selection.smart_correlation_selection import SmartCorrelatedSelection
 from feature_engine.selection.drop_psi_features import DropHighPSIFeatures
-from feature_engine.creation import MathematicalCombination, CombineWithReferenceFeature
+# from feature_engine.creation import MathematicalCombination, CombineWithReferenceFeature
 from feature_engine.transformation import *
 
 from xgboost import XGBClassifier, XGBRegressor
@@ -38,21 +38,19 @@ from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier,RandomFo
 from sklearn.naive_bayes import GaussianNB
 from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
 
-# from autokeras import StructuredDataClassifier,StructuredDataRegressor
-
-
+# 实验配置
 EXPERIMENT_CONFIG = {
-    'dataset': 'white',  # ['red', 'white']
-    'task': 'classification',  # 必填 ['classification', 'regression', 'coarse_grain']
-    # 'outlier_detect': 'IForest',  # 选填 ['ECOD', 'IForest']
-    # 'outlier_process': 'drop_outliers',  # 必填 ['impute_outliers', 'drop_outliers']
-    # 'feature_creation': 'true',  # 选填 ['true']
-    # 'feature_selection': 'SmartCorrelatedSelection',  # 选填 ['SmartCorrelatedSelection', 'DropHighPSIFeatures']
-    # 'transformer': 'YeoJohnsonTransformer',
-    # 选填 ['LogTransformer', 'LogCpTransformer', 'ArcsinTransformer', 'PowerTransformer', 'YeoJohnsonTransformer', 'BoxCoxTransformer']
-    'sampler': 'BorderlineSMOTE',
-    # 选填 ['ADASYN', 'RandomOverSampler', 'SMOTE', 'BorderlineSMOTE', 'SVMSMOTE', 'SMOTEN']
+    'dataset': 'white',  # 数据集 必填 ['red', 'white']
+    'task': 'classification',  # 任务 必填 ['classification', 'regression', 'coarse_grain']
+    # 'outlier_detect': 'IForest',  # 异常点检测算法(启动了这个也必须启动outlier_process) ['ECOD', 'IForest']
+    # 'outlier_process': 'drop_outliers',  # 异常点处理算法 ['impute_outliers', 'drop_outliers']
+    # 'feature_creation': 'true',  # 创造额外特征 ['true']
+    # 'feature_selection': 'SmartCorrelatedSelection',  # 特征选择算法 ['SmartCorrelatedSelection', 'DropHighPSIFeatures']
+    'transformer': 'YeoJohnsonTransformer',  # scale算法 ['LogTransformer', 'LogCpTransformer', 'ArcsinTransformer', 'PowerTransformer', 'YeoJohnsonTransformer', 'BoxCoxTransformer']
+    'sampler': 'BorderlineSMOTE', # 重采样算法 ['ADASYN', 'RandomOverSampler', 'SMOTE', 'BorderlineSMOTE', 'SVMSMOTE', 'SMOTEN']
 }
+
+# 分类模型
 CLF_MODELS = {
     # 'KNN': KNeighborsClassifier(3),
     # 'SVC_linear': SVC(kernel="linear"),
@@ -67,9 +65,9 @@ CLF_MODELS = {
     # "XGBoost": XGBClassifier(),
     "LightGBM": LGBMClassifier(),
     # "CatBoost": CatBoostClassifier(silent=True),
-    # "AutoML": StructuredDataClassifier(),
 }
 
+# 回归模型
 REG_MODELS = {
     # 'KNN': KNeighborsRegressor(3),
     # 'SVC_linear': SVR(kernel="linear", C=0.025),
@@ -84,9 +82,9 @@ REG_MODELS = {
     "XGBoost": XGBRegressor(),
     "LightGBM": LGBMRegressor(),
     "CatBoost": CatBoostRegressor(silent=True),
-    # "AutoML": StructuredDataRegressor(),
 }
 
+# 初始化配置
 def init_config() -> None:
     # 显示所有列
     pd.set_option('display.max_columns', None)
@@ -101,7 +99,7 @@ def init_config() -> None:
     # seaborn 初始化
     sns.set()
 
-
+# 导入数据集
 def import_data(dataset_path: str) -> pd.DataFrame:
     task = EXPERIMENT_CONFIG['task']
 
@@ -124,7 +122,7 @@ def import_data(dataset_path: str) -> pd.DataFrame:
 
     return wine
 
-
+# 数据可视化分析
 def EDA(wine: pd.DataFrame) -> None:
     # 打印数据集基本信息
     print(wine.info())
@@ -179,7 +177,7 @@ def EDA(wine: pd.DataFrame) -> None:
     #         k += 1
     # plt.show()
 
-
+# 异常处理算法-用中位数替换异常值
 def impute_outliers(df, outlier_index):
     for col in df.columns:
         if col == 'quality':
@@ -189,11 +187,11 @@ def impute_outliers(df, outlier_index):
             df.loc[i, col] = med
     return df
 
-
+# 异常处理算法-丢弃异常点数据
 def drop_outliers(df, outlier_index):
     return df.drop(outlier_index)
 
-
+# 异常处理
 def handle_outlier(wine):
     X = wine.drop(['quality'], axis=1)
     # outlier 识别
@@ -206,7 +204,7 @@ def handle_outlier(wine):
     wine = eval(EXPERIMENT_CONFIG['outlier_process'])(wine, outlier_index)
     return wine
 
-
+# 特征选择
 def feature_selection(wine):
     X = wine.drop(['quality'], axis=1)
     Y = wine[['quality']]
@@ -215,7 +213,7 @@ def feature_selection(wine):
 
     return primed_wine
 
-
+# 特征创造
 def feature_creation(wine):
     X = wine.drop(['quality'], axis=1)
     Y = wine[['quality']]
@@ -264,7 +262,7 @@ def feature_creation(wine):
 
     return augmented_wine
 
-
+# 数据预处理
 def preprocessing(wine):
     # 处理outlier
     if (EXPERIMENT_CONFIG.get('outlier_detect')):
@@ -301,8 +299,7 @@ def preprocessing(wine):
 
     return wine, X_train, X_test, Y_train, Y_test
 
-
-
+# 模型评估
 def evaluation(model, X_test, Y_test):
     predict = model.predict(X_test)
     if EXPERIMENT_CONFIG['task'] == 'regression':
@@ -332,6 +329,6 @@ if __name__ == '__main__':
     for name,model in models.items():
         model.fit(X_train, Y_train)
 
-        print('-'*10 + name + '-'*10)
+        print('-'*20 + name + '-'*20)
         # 评估
         evaluation(model, X_test, Y_test)
