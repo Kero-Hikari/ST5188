@@ -21,7 +21,7 @@ from pyod.models.ecod import ECOD
 from pyod.models.iforest import IForest
 from feature_engine.selection.smart_correlation_selection import SmartCorrelatedSelection
 from feature_engine.selection.drop_psi_features import DropHighPSIFeatures
-# from feature_engine.creation import MathematicalCombination, CombineWithReferenceFeature
+from feature_engine.creation import MathematicalCombination, CombineWithReferenceFeature
 from feature_engine.transformation import *
 
 from xgboost import XGBClassifier, XGBRegressor
@@ -42,10 +42,10 @@ from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
 EXPERIMENT_CONFIG = {
     'dataset': 'white',  # 数据集 必填 ['red', 'white']
     'task': 'classification',  # 任务 必填 ['classification', 'regression', 'coarse_grain']
-    # 'outlier_detect': 'IForest',  # 异常点检测算法(启动了这个也必须启动outlier_process) ['ECOD', 'IForest']
-    # 'outlier_process': 'drop_outliers',  # 异常点处理算法 ['impute_outliers', 'drop_outliers']
-    # 'feature_creation': 'true',  # 创造额外特征 ['true']
-    # 'feature_selection': 'SmartCorrelatedSelection',  # 特征选择算法 ['SmartCorrelatedSelection', 'DropHighPSIFeatures']
+    'outlier_detect': 'IForest',  # 异常点检测算法(启动了这个也必须启动outlier_process) ['ECOD', 'IForest']
+    'outlier_process': 'drop_outliers',  # 异常点处理算法 ['impute_outliers', 'drop_outliers']
+    'feature_creation': 'true',  # 创造额外特征 ['true']
+    'feature_selection': 'DropHighPSIFeatures',  # 特征选择算法 ['SmartCorrelatedSelection', 'DropHighPSIFeatures']
     'transformer': 'YeoJohnsonTransformer',  # scale算法 ['LogTransformer', 'LogCpTransformer', 'ArcsinTransformer', 'PowerTransformer', 'YeoJohnsonTransformer', 'BoxCoxTransformer']
     'sampler': 'BorderlineSMOTE', # 重采样算法 ['ADASYN', 'RandomOverSampler', 'SMOTE', 'BorderlineSMOTE', 'SVMSMOTE', 'SMOTEN']
 }

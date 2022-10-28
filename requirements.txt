@@ -11,3 +11,5 @@ xgboost~=1.5.0
 lightgbm~=3.2.1
 catboost~=1.0.6
 optuna~=3.0.3
+feature_engine~=1.4.1
+imbalanced-learn~=0.9.1
